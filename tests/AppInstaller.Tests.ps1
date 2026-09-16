@@ -1,5 +1,5 @@
 #Requires -Version 7.0
-#Requires -Modules @{ ModuleName = 'Pester'; ModuleVersion = '5.0' }
+#Requires -Modules @{ ModuleName = 'Pester'; ModuleVersion = '6.0' }
 
 BeforeAll {
     if ([string]::IsNullOrWhiteSpace($env:TEMP)) {
@@ -361,8 +361,8 @@ Describe 'PowerShell deferred upgrade queue' {
         $started = Add-DeferredPowerShellUpgradeAction
 
         $started | Should -BeTrue
-        Assert-MockCalled -CommandName Test-DeferredPowerShellUpgradeEnvironment -Times 1 -Exactly
-        Assert-MockCalled -CommandName Add-DeferredAction -Times 1 -Exactly
+        Should -Invoke Test-DeferredPowerShellUpgradeEnvironment -Times 1 -Exactly
+        Should -Invoke Add-DeferredAction -Times 1 -Exactly
     }
 }
 

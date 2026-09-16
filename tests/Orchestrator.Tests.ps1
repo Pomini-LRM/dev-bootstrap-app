@@ -1,5 +1,5 @@
 #Requires -Version 7.0
-#Requires -Modules @{ ModuleName = 'Pester'; ModuleVersion = '5.0' }
+#Requires -Modules @{ ModuleName = 'Pester'; ModuleVersion = '6.0' }
 
 BeforeAll {
     if ([string]::IsNullOrWhiteSpace($env:TEMP)) {
@@ -69,8 +69,8 @@ Describe 'Configured module summary' {
 
         Write-ConfiguredModuleSummary -ModuleDefinitions $definitions
 
-        Assert-MockCalled -CommandName Write-Log -Times 1 -ParameterFilter { $Message -eq 'Configured modules:' }
-        Assert-MockCalled -CommandName Write-Log -Times 1 -ParameterFilter { $Message -eq 'Modules scheduled for this run: App Installer, GitHub Sync' }
+        Should -Invoke Write-Log -Times 1 -ParameterFilter { $Message -eq 'Configured modules:' }
+        Should -Invoke Write-Log -Times 1 -ParameterFilter { $Message -eq 'Modules scheduled for this run: App Installer, GitHub Sync' }
     }
 }
 
