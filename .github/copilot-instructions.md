@@ -56,6 +56,8 @@ tests/           Pester test files
 - **Configuration**: JSON config at `config/config.json`, validated against `config/config.schema.json`.
 - **Secrets**: sourced from environment variables or `.env` file. Never hard-code secrets.
 - **Logging**: use `Write-Log` (from `src/common/Logger.ps1`), never `Write-Host` in modules.
+- **Log language**: every `Write-Log` message authored by the app is professional, concise English, regardless of the OS display language. Raw external tool output (winget, git, az) that is localized by the OS must be logged at `-Level Debug` only, paired with an English `-Level Info` summary line.
+- **Log format consistency**: module progress lines use `"<Entity> [n/N]: <label>"`; each processed item logs `  Action: <message>` then `  Status: <STATUS> (<duration>)`.
 - **Report entries**: use `New-ReportEntry` with statuses: `ADDED`, `UPDATED`, `NONE`, `SKIPPED`, `ERROR`, `ORPHAN`, `INSTALLED`, `ALREADY_PRESENT`.
 - **Filtering**: use `Test-IncludeExcludeMatch` from `src/common/Filters.ps1` for include/exclude logic.
 - **Retry**: use `Invoke-WithRetry` from `src/common/Utilities.ps1` for network operations.

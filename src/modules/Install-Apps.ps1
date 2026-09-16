@@ -637,27 +637,29 @@ function Invoke-WingetGlobalRefresh {
     [CmdletBinding()]
     param()
 
-    Write-Log -Level Info -Message 'Refreshing winget sources (winget source update)...'
+    Write-Log -Level Info -Message 'Refreshing winget package sources...'
     $sourceOutput = & winget source update 2>&1
     $sourceExit = $LASTEXITCODE
     foreach ($line in @($sourceOutput)) {
         $text = ConvertTo-NormalizedWingetOutput -Text ([string]$line)
         if (-not [string]::IsNullOrWhiteSpace($text)) {
-            Write-Log -Level Info -Message "  [source update] $text"
+            # Raw winget output follows the OS display language; keep it at Debug level only.
+            Write-Log -Level Debug -Message "  [source update] $text"
         }
     }
-    Write-Log -Level Info -Message "winget source update completed (exit code $sourceExit)."
+    Write-Log -Level Info -Message "Winget package sources refreshed (exit code $sourceExit)."
 
-    Write-Log -Level Info -Message 'Listing available upgrades (winget upgrade)...'
+    Write-Log -Level Info -Message 'Checking for available winget upgrades...'
     $upgradeOutput = & winget upgrade --accept-source-agreements --disable-interactivity 2>&1
     $upgradeExit = $LASTEXITCODE
     foreach ($line in @($upgradeOutput)) {
         $text = ConvertTo-NormalizedWingetOutput -Text ([string]$line)
         if (-not [string]::IsNullOrWhiteSpace($text)) {
-            Write-Log -Level Info -Message "  [upgrade] $text"
+            # Raw winget output follows the OS display language; keep it at Debug level only.
+            Write-Log -Level Debug -Message "  [upgrade] $text"
         }
     }
-    Write-Log -Level Info -Message "winget upgrade listing completed (exit code $upgradeExit)."
+    Write-Log -Level Info -Message "Winget upgrade check completed (exit code $upgradeExit)."
 }
 
 function Get-WingetInstallArguments {

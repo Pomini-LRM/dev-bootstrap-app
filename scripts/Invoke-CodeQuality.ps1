@@ -72,20 +72,36 @@ if ($SkipTests.IsPresent) {
     exit 0
 }
 
-$configuration = New-PesterConfiguration
-$configuration.Run.Path = Join-Path $ProjectRoot 'tests'
-$configuration.Run.PassThru = $true
-$configuration.Output.Verbosity = 'Detailed'
-$configuration.TestResult.Enabled = $true
-$configuration.TestResult.OutputPath = Join-Path $ProjectRoot 'testResults.xml'
-$configuration.TestResult.OutputFormat = 'NUnitXml'
+$pesterModule = Get-Module -ListAvailable -Name Pester |
+    Where-Object { $_.Version.Major -eq 5 } |
+    Sort-Object -Property Version -Descending |
+    Select-Object -First 1
 
-$pesterResult = Invoke-Pester -Configuration $configuration
-if ($pesterResult.FailedCount -gt 0) {
-    exit 1
+if ($null -eq $pesterModule) {
+    throw 'Pester 5 is required to run the test suite. Install a Pester 5.x version and retry.'
 }
 
-Write-Host (
-    "Pester summary: passed=$($pesterResult.PassedCount), failed=$($pesterResult.FailedCount), skipped=$($pesterResult.SkippedCount)"
-) -ForegroundColor Green
+$testsPath = Join-Path $ProjectRoot 'tests'
+$testResultsPath = Join-Path $ProjectRoot 'testResults.xml'
+$pesterModulePath = $pesterModule.Path.Replace("'", "''")
+$escapedTestsPath = $testsPath.Replace("'", "''")
+$escapedTestResultsPath = $testResultsPath.Replace("'", "''")
+
+$pesterCommand = @"
+`$ErrorActionPreference = 'Stop'
+Import-Module -Name '$pesterModulePath' -Force -ErrorAction Stop
+`$configuration = New-PesterConfiguration
+`$configuration.Run.Path = '$escapedTestsPath'
+`$configuration.Run.PassThru = `$true
+`$configuration.Output.Verbosity = 'Detailed'
+`$configuration.TestResult.Enabled = `$true
+`$configuration.TestResult.OutputPath = '$escapedTestResultsPath'
+`$configuration.TestResult.OutputFormat = 'NUnitXml'
+`$pesterResult = Invoke-Pester -Configuration `$configuration
+Write-Host ("Pester summary: passed=`$(`$pesterResult.PassedCount), failed=`$(`$pesterResult.FailedCount), skipped=`$(`$pesterResult.SkippedCount)") -ForegroundColor Green
+if (`$pesterResult.FailedCount -gt 0) { exit 1 }
+"@
+
+& pwsh -NoLogo -NoProfile -Command $pesterCommand
+exit $LASTEXITCODE
 

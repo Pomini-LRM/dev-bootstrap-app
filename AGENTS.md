@@ -7,6 +7,8 @@
 3. Prefer small functions, explicit names, and minimal branching.
 4. Keep `src/automation/`, `config/automation.catalog.json`, `config/config.example.json`, tests, and README aligned when automation behavior changes.
 5. After every PowerShell change, run `pwsh ./scripts/Invoke-CodeQuality.ps1`. If formatting drift exists, run `pwsh ./scripts/Invoke-CodeQuality.ps1 -FixFormat` and rerun the quality gate.
+6. All `Write-Log` messages authored by the app must be in English, regardless of the OS display language. External tool output (winget, git, az, etc.) is not translated: if it is localized by the OS, log it at `-Level Debug` only, and add an English `-Level Info` summary line around it.
+7. Keep module log formatting consistent across `src/modules/`: progress lines use `"<Entity> [n/N]: <label>"`, and each processed item logs `  Action: <message>` followed by `  Status: <STATUS> (<duration>)`.
 
 ## Code Review Agent
 
