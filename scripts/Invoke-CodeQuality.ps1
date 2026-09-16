@@ -73,35 +73,30 @@ if ($SkipTests.IsPresent) {
 }
 
 $pesterModule = Get-Module -ListAvailable -Name Pester |
-    Where-Object { $_.Version.Major -eq 5 } |
+    Where-Object { $_.Version.Major -eq 6 } |
     Sort-Object -Property Version -Descending |
     Select-Object -First 1
 
 if ($null -eq $pesterModule) {
-    throw 'Pester 5 is required to run the test suite. Install a Pester 5.x version and retry.'
+    throw 'Pester 6 is required to run the test suite. Install a Pester 6.x version and retry.'
 }
 
-$testsPath = Join-Path $ProjectRoot 'tests'
-$testResultsPath = Join-Path $ProjectRoot 'testResults.xml'
-$pesterModulePath = $pesterModule.Path.Replace("'", "''")
-$escapedTestsPath = $testsPath.Replace("'", "''")
-$escapedTestResultsPath = $testResultsPath.Replace("'", "''")
+Import-Module -Name $pesterModule.Path -Force -ErrorAction Stop
 
-$pesterCommand = @"
-`$ErrorActionPreference = 'Stop'
-Import-Module -Name '$pesterModulePath' -Force -ErrorAction Stop
-`$configuration = New-PesterConfiguration
-`$configuration.Run.Path = '$escapedTestsPath'
-`$configuration.Run.PassThru = `$true
-`$configuration.Output.Verbosity = 'Detailed'
-`$configuration.TestResult.Enabled = `$true
-`$configuration.TestResult.OutputPath = '$escapedTestResultsPath'
-`$configuration.TestResult.OutputFormat = 'NUnitXml'
-`$pesterResult = Invoke-Pester -Configuration `$configuration
-Write-Host ("Pester summary: passed=`$(`$pesterResult.PassedCount), failed=`$(`$pesterResult.FailedCount), skipped=`$(`$pesterResult.SkippedCount)") -ForegroundColor Green
-if (`$pesterResult.FailedCount -gt 0) { exit 1 }
-"@
+$configuration = New-PesterConfiguration
+$configuration.Run.Path = Join-Path $ProjectRoot 'tests'
+$configuration.Run.PassThru = $true
+$configuration.Output.Verbosity = 'Detailed'
+$configuration.TestResult.Enabled = $true
+$configuration.TestResult.OutputPath = Join-Path $ProjectRoot 'testResults.xml'
+$configuration.TestResult.OutputFormat = 'NUnitXml'
 
-& pwsh -NoLogo -NoProfile -Command $pesterCommand
-exit $LASTEXITCODE
+$pesterResult = Invoke-Pester -Configuration $configuration
+if ($pesterResult.FailedCount -gt 0) {
+    exit 1
+}
+
+Write-Host (
+    "Pester summary: passed=$($pesterResult.PassedCount), failed=$($pesterResult.FailedCount), skipped=$($pesterResult.SkippedCount)"
+) -ForegroundColor Green
 
