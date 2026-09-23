@@ -161,6 +161,70 @@ Describe 'GitHub repo deduplication' {
     }
 }
 
+Describe 'DevOps wiki synchronization' {
+    It 'syncs project wiki repositories returned as hidden Git repositories' {
+        [System.Environment]::SetEnvironmentVariable('AZURE_DEVOPS_PAT', 'test-pat', 'Process')
+        [System.Environment]::SetEnvironmentVariable('AZURE_DEVOPS_ORGS', 'PominiLRM', 'Process')
+
+        $targetRoot = Join-Path $env:TEMP 'dev-bootstrap-tests-sync-modules' 'devops-hidden-wikis'
+        $script:devOpsUris = [System.Collections.Generic.List[string]]::new()
+        $script:devOpsCloneTargets = [System.Collections.Generic.List[string]]::new()
+
+        Mock -CommandName Test-CommandExists -MockWith { return $true }
+        Mock -CommandName Invoke-GitCloneOrPull -MockWith {
+            $script:devOpsCloneTargets.Add($DestinationPath)
+            return @{ Status = 'ADDED'; Message = 'Repository cloned.' }
+        }
+        Mock -CommandName Invoke-RestMethod -MockWith {
+            $uriText = [string]$Uri
+            $script:devOpsUris.Add($uriText)
+
+            if ($uriText -match '/_apis/projects') {
+                return [PSCustomObject]@{
+                    value = @(
+                        [PSCustomObject]@{ name = 'Add-ins' },
+                        [PSCustomObject]@{ name = 'Horizon' }
+                    )
+                }
+            }
+
+            if ($uriText -match '/Add-ins/_apis/git/repositories') {
+                return [PSCustomObject]@{
+                    value = @(
+                        [PSCustomObject]@{ name = 'Add-ins.wiki'; remoteUrl = 'https://PominiLRM@dev.azure.com/PominiLRM/Add-ins/_git/Add-ins.wiki'; isDisabled = $false }
+                    )
+                }
+            }
+
+            if ($uriText -match '/Horizon/_apis/git/repositories') {
+                return [PSCustomObject]@{
+                    value = @(
+                        [PSCustomObject]@{ name = 'Horizon_wiki'; remoteUrl = 'https://PominiLRM@dev.azure.com/PominiLRM/Horizon/_git/Horizon_wiki'; isDisabled = $false }
+                    )
+                }
+            }
+
+            if ($uriText -match '/_apis/wiki/wikis') {
+                return [PSCustomObject]@{ value = @() }
+            }
+
+            return [PSCustomObject]@{ value = @() }
+        }
+
+        $config = @{ modules = @{ devops = @{ path = $targetRoot; projectsInclude = @('*'); projectsExclude = @(); includeWikis = $true; setFolderIcon = $false; retryCount = 1; retryDelaySeconds = 0 } } }
+        $results = @(Invoke-DevOpsSync -Config $config -ProjectRoot $script:projectRoot)
+
+        @($script:devOpsUris | Where-Object { $_ -match 'includeHidden=true' }).Count | Should -Be 2
+        @($script:devOpsUris | Where-Object { $_ -match '/_apis/wiki/wikis' }).Count | Should -Be 0
+        @($script:devOpsCloneTargets | Where-Object { $_ -match 'Add-ins[\\/]Add-ins\.wiki$' }).Count | Should -Be 1
+        @($script:devOpsCloneTargets | Where-Object { $_ -match 'Horizon[\\/]Horizon_wiki$' }).Count | Should -Be 1
+        $resultItems = @($results | ForEach-Object { $_['Item'] })
+        $resultItems | Should -Contain 'Add-ins/Add-ins.wiki'
+        $resultItems | Should -Contain 'Horizon/Horizon_wiki'
+        (@($results | Where-Object { $_.Status -eq 'ORPHAN' })).Count | Should -Be 0
+    }
+}
+
 Describe 'ACR result coherence' {
     It 'attempts pull for explicitly configured images when registry probe fails' {
         [System.Environment]::SetEnvironmentVariable('AZURE_TENANT_ID', '51835014-d218-4754-b420-16de4790eedf', 'Process')
@@ -479,4 +543,6 @@ AfterAll {
         Remove-Item -Path $testRoot -Recurse -Force -ErrorAction SilentlyContinue
     }
 }
+
+
 

@@ -4,9 +4,9 @@
 .SYNOPSIS
     Azure DevOps repository synchronization module.
 .DESCRIPTION
-        Syncs repositories for one organization configured in AZURE_DEVOPS_ORGS.
-        Optional include/exclude project filters limit project scope.
-        Optional includeWikis setting controls code wiki download.
+    Syncs repositories for one organization configured in AZURE_DEVOPS_ORGS.
+    Optional include/exclude project filters limit project scope.
+    Optional includeWikis setting includes hidden Git repositories that back project wikis.
 
     Target path layout:
             <path>/<project>/<repo>
@@ -76,55 +76,30 @@ function Invoke-DevOpsSync {
     $expected = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
     $knownRemote = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
     $workItems = [System.Collections.Generic.List[object]]::new()
+    $seenWorkItems = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
 
     $projects = @(Get-DevOpsProjects -Organization $organization -Headers $headers -RetryCount $retryCount -RetryDelaySeconds $retryDelay)
     foreach ($project in $projects) {
         $projectName = [string]$project.name
         $syncProject = Test-DevOpsIncludeExcludeMatch -Name $projectName -IncludeTokens @($moduleConfig.projectsInclude) -ExcludeTokens @($moduleConfig.projectsExclude)
 
-        $repos = @(Get-DevOpsRepos -Organization $organization -Project $projectName -Headers $headers -RetryCount $retryCount -RetryDelaySeconds $retryDelay)
+        $repos = @(Get-DevOpsRepos -Organization $organization -Project $projectName -Headers $headers -RetryCount $retryCount -RetryDelaySeconds $retryDelay -IncludeHidden:([bool]$moduleConfig.includeWikis))
         foreach ($repo in $repos) {
             $repoName = [string]$repo.name
             $relative = "$projectName/$repoName"
             $knownRemote.Add($relative) | Out-Null
 
-            $workItems.Add([PSCustomObject]@{
-                    Label = "$projectName - $repoName"
-                    Relative = $relative
-                    DestinationPath = (Join-Path (Join-Path $targetRoot $projectName) $repoName)
-                    CloneUrl = ([string]$repo.remoteUrl)
-                    ShouldSync = $syncProject
-                })
-        }
-
-        if ($moduleConfig.includeWikis) {
-            # The backing git repository name for a project wiki is not guaranteed to follow the
-            # "<project>.wiki" convention (Azure DevOps allows it to be renamed or provisioned differently),
-            # so the actual wiki list is queried instead of guessing the name.
-            $wikis = @(Get-DevOpsWikis -Organization $organization -Project $projectName -Headers $headers -RetryCount $retryCount -RetryDelaySeconds $retryDelay)
-            foreach ($wiki in $wikis) {
-                $wikiCloneUrl = [string]$wiki.remoteUrl
-                if ([string]::IsNullOrWhiteSpace($wikiCloneUrl)) {
-                    $wikiCloneUrl = Get-DevOpsWikiRemoteUrl -Organization $organization -Project $projectName -WikiName ([string]$wiki.name)
-                }
-
-                $wikiRepoName = Get-DevOpsRepoNameFromCloneUrl -CloneUrl $wikiCloneUrl
-                if ([string]::IsNullOrWhiteSpace($wikiRepoName)) {
-                    $wikiRepoName = [string]$wiki.name
-                }
-
-                $wikiRelative = "$projectName/$wikiRepoName"
-                $knownRemote.Add($wikiRelative) | Out-Null
-
+            if ($seenWorkItems.Add($relative)) {
                 $workItems.Add([PSCustomObject]@{
-                        Label = "$projectName - $wikiRepoName"
-                        Relative = $wikiRelative
-                        DestinationPath = (Join-Path (Join-Path $targetRoot $projectName) $wikiRepoName)
-                        CloneUrl = $wikiCloneUrl
+                        Label = "$projectName - $repoName"
+                        Relative = $relative
+                        DestinationPath = (Join-Path (Join-Path $targetRoot $projectName) $repoName)
+                        CloneUrl = ([string]$repo.remoteUrl)
                         ShouldSync = $syncProject
                     })
             }
         }
+
     }
 
     $totalItems = $workItems.Count
@@ -225,75 +200,6 @@ function ConvertTo-DevOpsRemoteUrl {
     return $RemoteUrl
 }
 
-function Get-DevOpsWikiRemoteUrl {
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory)][string]$Organization,
-        [Parameter(Mandatory)][string]$Project,
-        [Parameter(Mandatory)][string]$WikiName
-    )
-
-    return "https://dev.azure.com/$Organization/$Project/_git/$WikiName"
-}
-
-function Get-DevOpsWikis {
-    <#
-    .SYNOPSIS
-        Retrieves the actual wikis (and their backing git repository URLs) for a project.
-    .DESCRIPTION
-        Queries the Azure DevOps Wiki API instead of assuming a "<project>.wiki" repository name,
-        because the backing git repository can be renamed or provisioned under a different name.
-    #>
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory)][string]$Organization,
-        [Parameter(Mandatory)][string]$Project,
-        [Parameter(Mandatory)][hashtable]$Headers,
-        [int]$RetryCount,
-        [int]$RetryDelaySeconds
-    )
-
-    $url = "https://dev.azure.com/$Organization/$Project/_apis/wiki/wikis?api-version=7.1-preview.2"
-    try {
-        $response = Invoke-WithRetry -MaxRetries $RetryCount -BaseDelaySeconds $RetryDelaySeconds -OperationName "DevOps wikis ($Organization/$Project)" -ScriptBlock {
-            Invoke-RestMethod -Uri $url -Headers $Headers -Method GET
-        }
-
-        return @($response.value)
-    }
-    catch {
-        $statusCode = $null
-        if ($_.Exception.Response) {
-            $statusCode = [int]$_.Exception.Response.StatusCode
-        }
-
-        # Projects without any wiki return HTTP 404: treat that as "no wikis" rather than a failure.
-        if ($statusCode -eq 404) {
-            return @()
-        }
-
-        Write-Log -Level Warning -Message "Unable to retrieve wikis for project '$Project': $_"
-        return @()
-    }
-}
-
-function Get-DevOpsRepoNameFromCloneUrl {
-    [CmdletBinding()]
-    param([string]$CloneUrl)
-
-    if ([string]::IsNullOrWhiteSpace($CloneUrl)) {
-        return ''
-    }
-
-    $segments = $CloneUrl -split '/_git/'
-    if ($segments.Count -lt 2) {
-        return ''
-    }
-
-    $lastSegment = ([string]$segments[-1]).Split('?')[0]
-    return [System.Uri]::UnescapeDataString($lastSegment)
-}
-
 function Test-DevOpsIncludeExcludeMatch {
     [CmdletBinding()]
     param(
@@ -347,10 +253,15 @@ function Get-DevOpsRepos {
         [Parameter(Mandatory)][string]$Project,
         [Parameter(Mandatory)][hashtable]$Headers,
         [int]$RetryCount,
-        [int]$RetryDelaySeconds
+        [int]$RetryDelaySeconds,
+        [switch]$IncludeHidden
     )
 
     $url = "https://dev.azure.com/$Organization/$Project/_apis/git/repositories?api-version=7.0"
+    if ($IncludeHidden) {
+        $url = "$url&includeHidden=true"
+    }
+
     $response = Invoke-WithRetry -MaxRetries $RetryCount -BaseDelaySeconds $RetryDelaySeconds -OperationName "DevOps repos ($Organization/$Project)" -ScriptBlock {
         Invoke-RestMethod -Uri $url -Headers $Headers -Method GET
     }
